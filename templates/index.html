@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z-Image Generator</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #00d9ff;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #aaa;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #16213e;
+            color: #fff;
+            font-size: 14px;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        .row {
+            display: flex;
+            gap: 15px;
+        }
+        .row .form-group {
+            flex: 1;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #00d9ff, #0077ff);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .progress-container {
+            margin-top: 20px;
+            display: none;
+        }
+        .progress-bar {
+            height: 30px;
+            background: #16213e;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d9ff, #0077ff);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-weight: bold;
+            text-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+        .status {
+            text-align: center;
+            margin-top: 10px;
+            color: #00d9ff;
+        }
+        .image-container {
+            margin-top: 20px;
+            text-align: center;
+            display: none;
+        }
+        .image-container img {
+            max-width: 100%;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 217, 255, 0.2);
+        }
+        .download-btn {
+            margin-top: 15px;
+            width: auto;
+            padding: 10px 30px;
+            display: inline-block;
+        }
+        .error {
+            color: #ff4757;
+            text-align: center;
+            margin-top: 10px;
+        }
+        .image-info {
+            color: #aaa;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .orientation-btns {
+            display: flex;
+            gap: 10px;
+        }
+        .orient-btn {
+            flex: 1;
+            padding: 10px;
+            background: #16213e;
+            border: 1px solid #333;
+            font-size: 14px;
+        }
+        .orient-btn.active {
+            background: linear-gradient(135deg, #00d9ff, #0077ff);
+            border-color: #00d9ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Z-Image Generator</h1>
+
+        <div class="form-group">
+            <label for="prompt">Prompt</label>
+            <textarea id="prompt" placeholder="Describe the image you want to generate...">girl playing on beach</textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Orientation</label>
+            <div class="orientation-btns">
+                <button type="button" class="orient-btn active" onclick="setOrientation('square')">Square (1024x1024)</button>
+                <button type="button" class="orient-btn" onclick="setOrientation('landscape')">Landscape (1200x800)</button>
+                <button type="button" class="orient-btn" onclick="setOrientation('portrait')">Portrait (800x1200)</button>
+            </div>
+            <input type="hidden" id="width" value="1024">
+            <input type="hidden" id="height" value="1024">
+        </div>
+
+        <div class="row">
+            <div class="form-group">
+                <label for="steps">Steps</label>
+                <input type="number" id="steps" value="9" min="1" max="50">
+            </div>
+            <div class="form-group">
+                <label for="seed">Seed (-1 for random)</label>
+                <input type="number" id="seed" value="-1">
+            </div>
+        </div>
+
+        <button id="generateBtn" onclick="generate()">Generate Image</button>
+
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+                <div class="progress-text" id="progressText">0%</div>
+            </div>
+            <div class="status" id="status">Initializing...</div>
+        </div>
+
+        <div class="error" id="error"></div>
+
+        <div class="image-container" id="imageContainer">
+            <div class="image-info" id="imageInfo"></div>
+            <img id="generatedImage" src="" alt="Generated Image">
+            <br>
+            <a href="/download" class="download-btn" style="text-decoration: none;">
+                <button class="download-btn">Download Image</button>
+            </a>
+        </div>
+    </div>
+
+    <script>
+        let polling = null;
+
+        function setOrientation(mode) {
+            const widthInput = document.getElementById('width');
+            const heightInput = document.getElementById('height');
+
+            if (mode === 'square') {
+                widthInput.value = 1024;
+                heightInput.value = 1024;
+            } else if (mode === 'landscape') {
+                widthInput.value = 1200;
+                heightInput.value = 800;
+            } else if (mode === 'portrait') {
+                widthInput.value = 800;
+                heightInput.value = 1200;
+            }
+
+            document.querySelectorAll('.orient-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        async function generate() {
+            const btn = document.getElementById('generateBtn');
+            const progressContainer = document.getElementById('progressContainer');
+            const imageContainer = document.getElementById('imageContainer');
+            const errorDiv = document.getElementById('error');
+
+            btn.disabled = true;
+            progressContainer.style.display = 'block';
+            imageContainer.style.display = 'none';
+            errorDiv.textContent = '';
+
+            const data = {
+                prompt: document.getElementById('prompt').value,
+                width: document.getElementById('width').value,
+                height: document.getElementById('height').value,
+                steps: document.getElementById('steps').value,
+                seed: document.getElementById('seed').value
+            };
+
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'Generation failed');
+                }
+
+                startPolling();
+            } catch (e) {
+                errorDiv.textContent = e.message;
+                btn.disabled = false;
+                progressContainer.style.display = 'none';
+            }
+        }
+
+        function startPolling() {
+            if (polling) clearInterval(polling);
+            polling = setInterval(checkProgress, 500);
+        }
+
+        async function checkProgress() {
+            try {
+                const response = await fetch('/progress');
+                const data = await response.json();
+
+                const progressFill = document.getElementById('progressFill');
+                const progressText = document.getElementById('progressText');
+                const status = document.getElementById('status');
+                const btn = document.getElementById('generateBtn');
+                const imageContainer = document.getElementById('imageContainer');
+                const progressContainer = document.getElementById('progressContainer');
+                const errorDiv = document.getElementById('error');
+
+                progressFill.style.width = data.progress + '%';
+                progressText.textContent = data.progress + '%';
+                status.textContent = data.message;
+
+                if (data.status === 'complete') {
+                    clearInterval(polling);
+                    btn.disabled = false;
+                    imageContainer.style.display = 'block';
+                    document.getElementById('generatedImage').src = 'data:image/png;base64,' + data.image;
+                    const w = document.getElementById('width').value;
+                    const h = document.getElementById('height').value;
+                    document.getElementById('imageInfo').textContent = `Output: ${w} x ${h}`;
+                }
+
+                if (data.status === 'error') {
+                    clearInterval(polling);
+                    btn.disabled = false;
+                    progressContainer.style.display = 'none';
+                    errorDiv.textContent = data.message;
+                }
+
+                if (data.status === 'idle' && !btn.disabled) {
+                    clearInterval(polling);
+                }
+            } catch (e) {
+                console.error('Polling error:', e);
+            }
+        }
+    </script>
+</body>
+</html>
